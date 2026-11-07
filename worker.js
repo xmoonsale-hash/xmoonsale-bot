@@ -1,37 +1,88 @@
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+
+    // Одноразовая настройка Telegram Webhook
+    if (request.method === "GET" && url.pathname === "/setup") {
+      if (url.searchParams.get("key") !== env.WEBHOOK_SECRET) {
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      const result = await fetch(
+        `https://api.telegram.org/bot${env.BOT_TOKEN}/setWebhook`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: "https://xmoonsale-bot.xmoonsale.workers.dev/",
+            secret_token: env.WEBHOOK_SECRET,
+            allowed_updates: ["message"]
+          })
+        }
+      );
+
+      return new Response(await result.text(), {
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     if (request.method !== "POST") {
       return new Response("🌌 xMoonSale is online!");
+    }
+
+    // Проверяем, что запрос действительно от Telegram
+    if (
+      request.headers.get("X-Telegram-Bot-Api-Secret-Token") !==
+      env.WEBHOOK_SECRET
+    ) {
+      return new Response("Forbidden", { status: 403 });
     }
 
     const update = await request.json();
     const message = update.message;
 
-    if (!message) return new Response("OK");
+    if (!message || !message.chat) {
+      return new Response("OK");
+    }
 
     const chatId = message.chat.id;
-    const text = message.text || "";
+    const command = (message.text || "").split(" ")[0];
 
     let reply;
 
-    if (text === "/start") {
-      reply = "🌌 Добро пожаловать в xMoonSale!\n\n" +
-        "🎮 Наш магазин цифровых товаров\n\n" +
-        "Выберите команду:\n" +
-        "/catalog — Каталог Steam\n" +
-        "/orders — Мои заказы\n" +
-        "/support — Поддержка\n" +
-        "/about — О проекте";
-    } else if (text === "/catalog") {
-      reply = "🎮 Пополнение Steam\n\nСкоро здесь появятся предложения!";
-    } else if (text === "/orders") {
-      reply = "📦 Раздел заказов пока настраивается.";
-    } else if (text === "/support") {
-      reply = "💬 Поддержка xMoonSale.\nНапишите свой вопрос.";
-    } else if (text === "/about") {
-      reply = "🌌 xMoonSale — цифровой магазин нового поколения.";
-    } else {
-      reply = "Используйте /start для открытия меню.";
+    switch (command) {
+      case "/start":
+        reply =
+          "🌌 Добро пожаловать в xMoonSale!\n\n" +
+          "🎮 Магазин цифровых товаров\n\n" +
+          "Выберите раздел:\n" +
+          "/catalog — Каталог Steam\n" +
+          "/orders — Мои заказы\n" +
+          "/support — Поддержка\n" +
+          "/about — О проекте";
+        break;
+
+      case "/catalog":
+        reply =
+          "🎮 ПОПОЛНЕНИЕ STEAM\n\n" +
+          "Раздел находится в разработке.\n" +
+          "Скоро здесь появятся предложения xMoonSale.";
+        break;
+
+      case "/orders":
+        reply = "📦 История заказов пока находится в разработке.";
+        break;
+
+      case "/support":
+        reply = "💬 Поддержка xMoonSale.\nОпишите свой вопрос.";
+        break;
+
+      case "/about":
+        reply = "🌌 xMoonSale — цифровой магазин нового поколения.";
+        break;
+
+      default:
+        reply = "Используйте /start для открытия меню.";
     }
 
     await fetch(
