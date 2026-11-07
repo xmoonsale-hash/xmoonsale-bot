@@ -5,11 +5,12 @@ export default {
 
     // Настройка Telegram Webhook
     if (request.method === "GET" && url.pathname === "/setup") {
-      if (!env.WEBHOOK_SECRET || !env.BOT_TOKEN) {
-        return new Response("Worker secrets are missing", {
-          status: 500
-        });
-      }
+      return new Response(JSON.stringify({
+  botToken: Boolean(env.BOT_TOKEN),
+  webhookSecret: Boolean(env.WEBHOOK_SECRET)
+}), {
+  headers: { "Content-Type": "application/json" }
+});
 
       if (url.searchParams.get("key") !== env.WEBHOOK_SECRET) {
         return new Response("Forbidden", { status: 403 });
