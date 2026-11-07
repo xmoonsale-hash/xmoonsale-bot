@@ -6,21 +6,18 @@ async function tg(token, method, data) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data)
   });
-
   const result = await response.json().catch(() => ({}));
-  if (!response.ok || !result.ok) {
-    console.error(`Telegram ${method} failed`, result);
-  }
+  if (!response.ok || !result.ok) console.error(`Telegram ${method} failed`, result);
   return result;
 }
 
 const KEYBOARD = (rows) => ({ inline_keyboard: rows });
 
 const PRODUCTS = {
-  150:  { price: 199, label: "150 ₽" },
-  250:  { price: 329, label: "250 ₽" },
-  500:  { price: 649, label: "500 ₽", tag: "🔥 Популярное" },
-  750:  { price: 979, label: "750 ₽" },
+  150: { price: 199, label: "150 ₽" },
+  250: { price: 329, label: "250 ₽" },
+  500: { price: 649, label: "500 ₽", tag: "🔥 Популярное" },
+  750: { price: 979, label: "750 ₽" },
   1000: { price: 1299, label: "1 000 ₽", tag: "💜 Выгодный выбор" },
   1250: { price: 1629, label: "1 250 ₽" },
   1500: { price: 1949, label: "1 500 ₽" },
@@ -54,6 +51,21 @@ const STATUS_NAMES = {
   done: "✅ Выполнен",
   cancelled: "❌ Отменён"
 };
+
+// Курс RUB → BYN. Можно изменить через переменную Cloudflare.
+const DEFAULT_RUB_TO_BYN_RATE = 0.0384;
+
+function getExchangeRate(env) {
+  const rate = Number(env.RUB_TO_BYN_RATE);
+  return Number.isFinite(rate) && rate > 0
+    ? rate
+    : DEFAULT_RUB_TO_BYN_RATE;
+}
+
+function calculateBYN(rubAmount, rate) {
+  const value = Number(rubAmount) * Number(rate);
+  return Math.ceil((value - 1e-9) * 10) / 10;
+}
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (c) => ({
@@ -99,21 +111,18 @@ async function deleteKey(env, key) {
 async function listJson(env, prefix, limit = 1000) {
   let cursor;
   const result = [];
-
   do {
     const page = await db(env).list({
       prefix,
       limit: Math.min(1000, limit - result.length),
       cursor
     });
-
     const values = await Promise.all(
       page.keys.map((item) => getJson(env, item.name))
     );
     result.push(...values.filter(Boolean));
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor && result.length < limit);
-
   return result;
 }
 
@@ -130,7 +139,6 @@ async function saveUser(env, user) {
 function steamKeyboard() {
   const amounts = Object.keys(PRODUCTS).map(Number);
   const rows = [];
-
   for (let i = 0; i < amounts.length; i += 2) {
     rows.push(amounts.slice(i, i + 2).map((amount) => {
       const product = PRODUCTS[amount];
@@ -140,7 +148,6 @@ function steamKeyboard() {
       };
     }));
   }
-
   rows.push([{ text: "↩️ Назад", callback_data: "menu" }]);
   return KEYBOARD(rows);
 }
@@ -155,7 +162,6 @@ async function sendMenu(token, chatId, env) {
     "🔒 Пароль от аккаунта не требуется\n\n" +
     "━━━━━━━━━━━━━━━━━━\n" +
     "Выбери нужный раздел:";
-
   if (env.BRAND_IMAGE_FILE_ID) {
     return tg(token, "sendPhoto", {
       chat_id: chatId,
@@ -165,7 +171,6 @@ async function sendMenu(token, chatId, env) {
       reply_markup: MENU
     });
   }
-
   return tg(token, "sendMessage", {
     chat_id: chatId,
     text,
@@ -208,7 +213,6 @@ async function showOrders(token, env, chatId, userId) {
     .slice(0, 10);
 
   let text = "📦 <b>МОИ ЗАКАЗЫ</b>\n━━━━━━━━━━━━━━━━━━\n\n";
-
   if (!orders.length) {
     text += "У тебя пока нет оформленных заявок.";
   } else {
@@ -221,7 +225,6 @@ async function showOrders(token, env, chatId, userId) {
         `Статус: ${STATUS_NAMES[order.status] || order.status}\n\n`;
     }
   }
-
   return tg(token, "sendMessage", {
     chat_id: chatId,
     text: text + "\n💜 xMoonSale",
@@ -250,7 +253,6 @@ async function showAdminOrders(token, env, chatId) {
   }]);
 
   rows.push([{ text: "↩️ В админ-меню", callback_data: "admin_home" }]);
-
   return tg(token, "sendMessage", {
     chat_id: chatId,
     text: "📦 <b>ПОСЛЕДНИЕ ЗАКАЗЫ</b>\n━━━━━━━━━━━━━━━━━━\nВыбери заказ:",
@@ -270,6 +272,14 @@ async function showOrder(token, env, chatId, orderId) {
     });
   }
 
+  const orderRate = Number(order.exchangeRate) > 0
+    ? Number(order.exchangeRate)
+    : getExchangeRate(env);
+
+  const orderBYN = order.priceBYN !== undefined && order.priceBYN !== null
+    ? Number(order.priceBYN)
+    : calculateBYN(order.price, orderRate);
+
   const rows = [];
   if (order.status === "pending") {
     rows.push([{ text: "💳 Подтвердить оплату", callback_data: `op_paid_${order.id}` }]);
@@ -288,6 +298,8 @@ async function showOrder(token, env, chatId, orderId) {
       `👤 Логин: <code>${escapeHtml(order.login)}</code>\n` +
       `💎 Пополнение: <b>${order.amount} ₽</b>\n` +
       `💰 К оплате: <b>${order.price} ₽</b>\n` +
+      `💱 Расчётная сумма: <b>${orderBYN.toFixed(2)} BYN</b>\n` +
+      `📈 Курс: <code>1 RUB = ${orderRate.toFixed(4)} BYN</code>\n` +
       `👥 Telegram ID: <code>${escapeHtml(order.userId)}</code>\n` +
       `Статус: ${STATUS_NAMES[order.status] || order.status}\n\n` +
       "Выбери действие:",
@@ -414,7 +426,6 @@ async function sendBroadcast(token, env, chatId) {
   }
 
   await deleteKey(env, "broadcast:draft");
-
   return tg(token, "sendMessage", {
     chat_id: chatId,
     text:
@@ -425,9 +436,14 @@ async function sendBroadcast(token, env, chatId) {
     reply_markup: ADMIN_MENU
   });
 }
-
 function paymentMessage(env, order) {
-  const details = String(env.PAYMENT_DETAILS || "").trim();
+  // Убираем строки с упоминанием BYN из инструкции покупателю.
+  const details = String(env.PAYMENT_DETAILS || "")
+    .trim()
+    .split("\n")
+    .filter((line) => !/BYN|белорусск/i.test(line))
+    .join("\n")
+    .trim();
 
   if (!details) {
     return (
@@ -445,6 +461,7 @@ function paymentMessage(env, order) {
     "После оплаты дождись подтверждения администратора. Пароль Steam не отправляй."
   );
 }
+
 async function createOrder(token, env, chatId, userId, state) {
   const product = PRODUCTS[state.amount];
 
@@ -457,8 +474,8 @@ async function createOrder(token, env, chatId, userId, state) {
     return;
   }
 
-  // A per-user marker reduces duplicate creation from repeated button taps.
   const currentState = await getJson(env, `state:${userId}`);
+
   if (currentState?.type !== "steam_confirm") {
     if (currentState?.type === "order_created") {
       await tg(token, "sendMessage", {
@@ -471,6 +488,11 @@ async function createOrder(token, env, chatId, userId, state) {
   }
 
   const orderId = "XM-" + crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
+
+  // Сохраняем курс и расчётную сумму в момент создания заказа.
+  const exchangeRate = getExchangeRate(env);
+  const priceBYN = calculateBYN(product.price, exchangeRate);
+
   const order = {
     id: orderId,
     userId: String(userId),
@@ -478,6 +500,8 @@ async function createOrder(token, env, chatId, userId, state) {
     login: state.login,
     amount: Number(state.amount),
     price: product.price,
+    exchangeRate,
+    priceBYN,
     status: "pending",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -493,7 +517,9 @@ async function createOrder(token, env, chatId, userId, state) {
       `🆔 Номер: <code>${escapeHtml(orderId)}</code>\n` +
       "🎮 Товар: Пополнение Steam\n" +
       `💎 Номинал: <b>${order.amount} ₽</b>\n` +
-      `💰 К оплате: <b>${order.price} ₽</b>\n` +
+      `💰 Цена: <b>${order.price} RUB</b>\n` +
+      `💱 Расчётная сумма: <b>${order.priceBYN.toFixed(2)} BYN</b>\n` +
+      `📈 Курс: <code>1 RUB = ${order.exchangeRate.toFixed(4)} BYN</code>\n` +
       `👤 Логин: <code>${escapeHtml(order.login)}</code>\n` +
       `👥 Telegram ID: <code>${escapeHtml(userId)}</code>\n\n` +
       "⏳ Статус: <b>Ожидает оплаты</b>",
@@ -781,6 +807,7 @@ export default {
           text: "👀 <b>Предварительный просмотр рассылки:</b>",
           parse_mode: "HTML"
         });
+
         await broadcastPreview(env.BOT_TOKEN, chatId, draft);
         return new Response("OK");
       }
@@ -819,6 +846,7 @@ export default {
             [{ text: "❌ Отменить", callback_data: "checkout_cancel" }]
           ])
         });
+
         return new Response("OK");
       }
 
