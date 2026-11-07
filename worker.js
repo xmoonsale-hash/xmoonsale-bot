@@ -1,95 +1,56 @@
 
 const API = (token) => `https://api.telegram.org/bot${token}`;
 
-function mainMenu() {
-  return {
-    inline_keyboard: [
-      [{ text: "🛍 Каталог товаров", callback_data: "catalog" }],
-      [{ text: "🎮 Пополнение Steam", callback_data: "steam" }],
-      [{ text: "📦 Мои заказы", callback_data: "orders" }],
-      [
-        { text: "💬 Поддержка", callback_data: "support" },
-        { text: "ℹ️ О проекте", callback_data: "about" }
-      ]
-    ]
-  };
-}
-
-function backMenu() {
-  return {
-    inline_keyboard: [
-      [{ text: "↩️ Главное меню", callback_data: "menu" }]
-    ]
-  };
-}
-
-function page(action) {
-  switch (action) {
-    case "catalog":
-      return {
-        text:
-          "🛍 КАТАЛОГ xMoonSale\n\n" +
-          "Выбери интересующее направление:\n\n" +
-          "🎮 Игры и пополнения\n" +
-          "💻 Программы и сервисы\n" +
-          "🔑 Цифровые ключи\n" +
-          "⚙️ Игровые настройки\n\n" +
-          "Каталог постепенно наполняется!",
-        keyboard: backMenu()
-      };
-
-    case "steam":
-      return {
-        text:
-          "🎮 ПОПОЛНЕНИЕ STEAM\n\n" +
-          "Мы готовим предложения для пополнения Steam.\n\n" +
-          "Скоро здесь появятся доступные варианты оформления заказа.",
-        keyboard: backMenu()
-      };
-
-    case "orders":
-      return {
-        text:
-          "📦 МОИ ЗАКАЗЫ\n\n" +
-          "История покупок пока находится в разработке.\n\n" +
-          "Здесь будут отображаться твои заказы.",
-        keyboard: backMenu()
-      };
-
-    case "support":
-      return {
-        text:
-          "💬 ПОДДЕРЖКА xMoonSale\n\n" +
-          "Опиши свой вопрос следующим сообщением.\n\n" +
-          "Мы поможем разобраться!",
-        keyboard: backMenu()
-      };
-
-    case "about":
-      return {
-        text:
-          "🌌 О ПРОЕКТЕ xMoonSale\n\n" +
-          "xMoonSale — развивающаяся цифровая площадка.\n\n" +
-          "Наша цель — объединить цифровые товары, игровые сервисы и полезные инструменты в одной экосистеме.\n\n" +
-          "Добро пожаловать в нашу вселенную! 💜",
-        keyboard: backMenu()
-      };
-
-    default:
-      return {
-        text:
-          "🌌 xMoonSale — твой цифровой магазин!\n\n" +
-          "Выбери нужный раздел:",
-        keyboard: mainMenu()
-      };
-  }
-}
-
-async function telegram(token, method, data) {
-  return fetch(`${API(token)}/${method}`, {
+async function tg(token, method, data) {
+  const response = await fetch(`${API(token)}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data)
+  });
+  return response.json();
+}
+
+const menu = {
+  inline_keyboard: [
+    [{ text: "🎮 Пополнить Steam", callback_data: "steam" }],
+    [{ text: "📦 Мои заказы", callback_data: "orders" }],
+    [
+      { text: "💬 Поддержка", callback_data: "support" },
+      { text: "ℹ️ О проекте", callback_data: "about" }
+    ]
+  ]
+};
+
+const back = {
+  inline_keyboard: [
+    [{ text: "↩️ Главное меню", callback_data: "menu" }]
+  ]
+};
+
+function steamMenu() {
+  return {
+    inline_keyboard: [
+      [
+        { text: "100 ₽", callback_data: "amount_100" },
+        { text: "250 ₽", callback_data: "amount_250" }
+      ],
+      [
+        { text: "500 ₽", callback_data: "amount_500" },
+        { text: "1 000 ₽", callback_data: "amount_1000" }
+      ],
+      [{ text: "↩️ Назад", callback_data: "menu" }]
+    ]
+  };
+}
+
+async function sendMenu(token, chatId) {
+  await tg(token, "sendMessage", {
+    chat_id: chatId,
+    text:
+      "🌌 xMoonSale\n\n" +
+      "Добро пожаловать в цифровую вселенную!\n\n" +
+      "🎮 Выбери нужный раздел:",
+    reply_markup: menu
   });
 }
 
@@ -98,26 +59,22 @@ export default {
     const url = new URL(request.url);
 
     if (!env.BOT_TOKEN || !env.WEBHOOK_SECRET) {
-      return new Response("Worker secrets are missing", {
-        status: 500
-      });
+      return new Response("Worker secrets are missing", { status: 500 });
     }
 
-    // Настройка Webhook
+    // Настройка Telegram Webhook
     if (request.method === "GET" && url.pathname === "/setup") {
       if (url.searchParams.get("key") !== env.WEBHOOK_SECRET) {
         return new Response("Forbidden", { status: 403 });
       }
 
-      const result = await telegram(env.BOT_TOKEN, "setWebhook", {
+      const result = await tg(env.BOT_TOKEN, "setWebhook", {
         url: "https://xmoonsale-bot.xmoonsale.workers.dev/",
         secret_token: env.WEBHOOK_SECRET,
         allowed_updates: ["message", "callback_query"]
       });
 
-      return new Response(await result.text(), {
-        headers: { "Content-Type": "application/json" }
-      });
+      return Response.json(result);
     }
 
     if (request.method !== "POST") {
@@ -133,93 +90,175 @@ export default {
 
     const update = await request.json();
 
-    // Нажатие Inline-кнопки
+    // Обработка нажатий кнопок
     if (update.callback_query) {
-      const callback = update.callback_query;
-      const chatId = callback.message?.chat?.id;
-      const messageId = callback.message?.message_id;
+      const cb = update.callback_query;
+      const chatId = cb.message.chat.id;
+      const messageId = cb.message.message_id;
+      const data = cb.data;
 
-      await telegram(env.BOT_TOKEN, "answerCallbackQuery", {
-        callback_query_id: callback.id
+      await tg(env.BOT_TOKEN, "answerCallbackQuery", {
+        callback_query_id: cb.id
       });
 
-      if (!chatId || !messageId) {
-        return new Response("OK");
-      }
-
-      const selected = page(callback.data);
-
-      const result = await telegram(
-        env.BOT_TOKEN,
-        "editMessageText",
-        {
+      if (data === "menu") {
+        await tg(env.BOT_TOKEN, "editMessageText", {
           chat_id: chatId,
           message_id: messageId,
-          text: selected.text,
-          reply_markup: selected.keyboard
+          text: "🌌 xMoonSale\n\nДобро пожаловать! Выбери раздел:",
+          reply_markup: menu
+        });
+      }
+
+      if (data === "steam") {
+        await tg(env.BOT_TOKEN, "editMessageText", {
+          chat_id: chatId,
+          message_id: messageId,
+          text:
+            "🎮 ПОПОЛНЕНИЕ STEAM\n\n" +
+            "Выбери сумму пополнения:\n\n" +
+            "🌌 Быстро. Удобно. Надёжно.",
+          reply_markup: steamMenu()
+        });
+      }
+
+      if (data.startsWith("amount_")) {
+        const amount = Number(data.replace("amount_", ""));
+
+        if (![100, 250, 500, 1000].includes(amount)) {
+          return new Response("Invalid amount");
         }
-      );
+
+        await tg(env.BOT_TOKEN, "sendMessage", {
+          chat_id: chatId,
+          text:
+            "🌌 xMoonSale | STEAM\n\n" +
+            "Выбрана сумма: " + amount + " ₽\n\n" +
+            "✍️ Отправь ответом на это сообщение свой логин Steam.\n\n" +
+            "⚠️ Нужен только логин аккаунта. Никогда не отправляй пароль!",
+          reply_markup: {
+            force_reply: true,
+            input_field_placeholder: "Твой логин Steam"
+          }
+        });
+      }
+
+      const pages = {
+        orders:
+          "📦 МОИ ЗАКАЗЫ\n\nИстория заказов пока находится в разработке.",
+        support:
+          "💬 ПОДДЕРЖКА\n\nНапиши нам свой вопрос. Мы поможем разобраться.",
+        about:
+          "🌌 О xMoonSale\n\nЦифровая площадка, которая объединяет игровые товары и полезные сервисы."
+      };
+
+      if (pages[data]) {
+        await tg(env.BOT_TOKEN, "editMessageText", {
+          chat_id: chatId,
+          message_id: messageId,
+          text: pages[data],
+          reply_markup: back
+        });
+      }
 
       return new Response("OK");
     }
 
-    // Обычные сообщения
+    // Обработка сообщений
     const message = update.message;
-
-    if (!message || !message.chat) {
-      return new Response("OK");
-    }
+    if (!message || !message.chat) return new Response("OK");
 
     const chatId = message.chat.id;
     const text = (message.text || "").trim();
-    const command = text.split(" ")[0].toLowerCase();
 
-    if (command === "/start" || command === "/menu") {
-      // Убираем старую серую клавиатуру
-      await telegram(env.BOT_TOKEN, "sendMessage", {
+    if (text === "/start" || text === "/menu") {
+      await tg(env.BOT_TOKEN, "sendMessage", {
         chat_id: chatId,
-        text: "🌌 Загружаем меню xMoonSale...",
+        text: "🌌 Открываем xMoonSale...",
         reply_markup: { remove_keyboard: true }
       });
+      await sendMenu(env.BOT_TOKEN, chatId);
+      return new Response("OK");
+    }
 
-      const menu = page("menu");
+    if (text === "/cancel") {
+      await sendMenu(env.BOT_TOKEN, chatId);
+      return new Response("OK");
+    }
 
-      await telegram(env.BOT_TOKEN, "sendMessage", {
+    // Покупатель отвечает логином на запрос бота
+    const replyText = message.reply_to_message?.text || "";
+
+    if (replyText.startsWith("🌌 xMoonSale | STEAM")) {
+      const amountMatch = replyText.match(/Выбрана сумма: (\d+) ₽/);
+      const amount = amountMatch ? Number(amountMatch[1]) : 0;
+
+      if (!/^[A-Za-z0-9_.-]{2,64}$/.test(text)) {
+        await tg(env.BOT_TOKEN, "sendMessage", {
+          chat_id: chatId,
+          text:
+            "⚠️ Не удалось распознать логин.\n\n" +
+            "Отправь именно логин Steam, без пароля.",
+          reply_markup: {
+            force_reply: true
+          }
+        });
+        return new Response("OK");
+      }
+
+      await tg(env.BOT_TOKEN, "sendMessage", {
         chat_id: chatId,
-        text: menu.text,
-        reply_markup: menu.keyboard
+        text:
+          "🌌 xMoonSale | ПРОВЕРКА ЗАКАЗА\n\n" +
+          "🎮 Пополнение Steam\n" +
+          "💰 Сумма: " + amount + " ₽\n" +
+          "👤 Логин: " + text + "\n\n" +
+          "Проверь данные.\n\n" +
+          "Для подтверждения ответь на это сообщение словом ДА.\n" +
+          "Для отмены отправь /cancel.",
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: "ДА"
+        }
       });
 
       return new Response("OK");
     }
 
-    const commands = {
-      "/catalog": "catalog",
-      "/steam": "steam",
-      "/orders": "orders",
-      "/support": "support",
-      "/about": "about"
-    };
+    // Подтверждение предварительной заявки
+    if (replyText.startsWith("🌌 xMoonSale | ПРОВЕРКА ЗАКАЗА")) {
+      const amountMatch = replyText.match(/💰 Сумма: (\d+) ₽/);
+      const loginMatch = replyText.match(/👤 Логин: ([^\n]+)/);
 
-    const action = commands[command];
+      if (text.toUpperCase() !== "ДА") {
+        await tg(env.BOT_TOKEN, "sendMessage", {
+          chat_id: chatId,
+          text: "Заказ не подтверждён. Отправь /start, чтобы начать заново."
+        });
+        return new Response("OK");
+      }
 
-    if (action) {
-      const selected = page(action);
-
-      await telegram(env.BOT_TOKEN, "sendMessage", {
+      await tg(env.BOT_TOKEN, "sendMessage", {
         chat_id: chatId,
-        text: selected.text,
-        reply_markup: selected.keyboard
+        text:
+          "🌌 xMoonSale\n\n" +
+          "✅ Данные предварительной заявки подтверждены!\n\n" +
+          "🎮 Steam: " + (loginMatch ? loginMatch[1] : "—") + "\n" +
+          "💰 Сумма пополнения: " +
+          (amountMatch ? amountMatch[1] : "—") + " ₽\n\n" +
+          "⚠️ Сейчас магазин работает в тестовом режиме.\n" +
+          "Оплата и автоматическое выполнение заказа ещё не подключены.\n\n" +
+          "Спасибо, что выбираешь xMoonSale! 💜",
+        reply_markup: back
       });
 
       return new Response("OK");
     }
 
-    await telegram(env.BOT_TOKEN, "sendMessage", {
+    await tg(env.BOT_TOKEN, "sendMessage", {
       chat_id: chatId,
-      text:
-        "🌌 Используй меню xMoonSale, чтобы выбрать нужный раздел.",
-      reply_markup: mainMenu()
+      text: "🌌 Используй меню xMoonSale для выбора раздела.",
+      reply_markup: menu
     });
 
     return new Response("OK");
