@@ -4,6 +4,9 @@ export default {
 
     // Одноразовая настройка Telegram Webhook
     if (request.method === "GET" && url.pathname === "/setup") {
+      return new Response(
+  env.WEBHOOK_SECRET ? "SECRET EXISTS" : "SECRET MISSING"
+);
       if (url.searchParams.get("key") !== env.WEBHOOK_SECRET) {
         return new Response("Forbidden", { status: 403 });
       }
