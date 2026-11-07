@@ -28,6 +28,7 @@ const PRODUCTS = {
 // Telegram-канал xMoonVerse.
 const CHANNEL_USERNAME = "@xmoonverse";
 
+// Основное меню.
 const MENU = KEYBOARD([
   [{ text: "🎮 Пополнить Steam", callback_data: "steam" }],
   [{ text: "📦 Мои заказы", callback_data: "orders" }],
@@ -142,6 +143,7 @@ async function saveUser(env, user) {
 function steamKeyboard() {
   const amounts = Object.keys(PRODUCTS).map(Number);
   const rows = [];
+
   for (let i = 0; i < amounts.length; i += 2) {
     rows.push(amounts.slice(i, i + 2).map((amount) => {
       const product = PRODUCTS[amount];
@@ -151,53 +153,89 @@ function steamKeyboard() {
       };
     }));
   }
+
   rows.push([{ text: "↩️ Назад", callback_data: "menu" }]);
   return KEYBOARD(rows);
 }
 
-// Кнопки каталога канала.
-// Каждая кнопка открывает бота с уже выбранным номиналом.
+// Красивые кнопки каталога канала.
+// Восемь номиналов расположены по две кнопки в ряд.
+// 2 000 ₽ — отдельной широкой строкой.
 function channelCatalogKeyboard() {
-  const amounts = Object.keys(PRODUCTS).map(Number);
+  const amounts = [150, 250, 500, 750, 1000, 1250, 1500, 1750];
   const rows = [];
+
+  const icons = {
+    150: "🌙",
+    250: "💎",
+    500: "🔥",
+    750: "✨",
+    1000: "💜",
+    1250: "🚀",
+    1500: "🌌",
+    1750: "⚡"
+  };
 
   for (let i = 0; i < amounts.length; i += 2) {
     rows.push(amounts.slice(i, i + 2).map((amount) => {
       const product = PRODUCTS[amount];
 
       return {
-        text: `${product.label} · ${product.price} ₽`,
+        text: `${icons[amount]} ${product.label} · ${product.price} ₽`,
         url: `https://t.me/xMoonSaleBot?start=steam_${amount}`
       };
     }));
   }
 
-  rows.push([
-    {
-      text: "💬 Поддержка",
-      url: "https://t.me/axg0d"
-    }
-  ]);
+  // Максимальный номинал — отдельной строкой.
+  const maxProduct = PRODUCTS[2000];
+
+  rows.push([{
+    text: `👑 ${maxProduct.label} · ${maxProduct.price} ₽`,
+    url: "https://t.me/xMoonSaleBot?start=steam_2000"
+  }]);
+
+  // Поддержка — отдельной строкой внизу.
+  rows.push([{
+    text: "💬 Поддержка",
+    url: "https://t.me/axg0d"
+  }]);
 
   return KEYBOARD(rows);
 }
 
 // Публикация каталога Steam в канале xMoonVerse.
-async function publishChannelCatalog(token) {
+// Если есть изображение бренда, оно ставится над кнопками.
+async function publishChannelCatalog(token, env) {
+  const keyboard = channelCatalogKeyboard();
+
+  const caption =
+    "🌌 <b>xMoonVerse</b>\n" +
+    "━━━━━━━━━━━━━━━━━━\n\n" +
+    "🎮 <b>STEAM STORE</b>\n" +
+    "<i>Пополнение баланса Steam</i>\n\n" +
+    "Выбери нужный номинал ниже и перейди к оформлению заказа.\n\n" +
+    "💜 Прозрачные цены\n" +
+    "🔒 Пароль от аккаунта не требуется\n" +
+    "🚀 Удобное оформление через xMoonSaleBot";
+
+  const brandImage = env.CHANNEL_IMAGE_FILE_ID || env.BRAND_IMAGE_FILE_ID;
+
+  if (brandImage) {
+    return tg(token, "sendPhoto", {
+      chat_id: CHANNEL_USERNAME,
+      photo: brandImage,
+      caption,
+      parse_mode: "HTML",
+      reply_markup: keyboard
+    });
+  }
+
   return tg(token, "sendMessage", {
     chat_id: CHANNEL_USERNAME,
-    text:
-      "🌌 <b>xMoonVerse</b>\n" +
-      "━━━━━━━━━━━━━━━━━━\n\n" +
-      "🎮 <b>STEAM | ПОПОЛНЕНИЕ БАЛАНСА</b>\n\n" +
-      "Выбери нужный номинал и перейди к оформлению заказа.\n\n" +
-      "💜 Прозрачные цены\n" +
-      "🔒 Пароль от аккаунта не требуется\n" +
-      "🚀 Удобное оформление через xMoonSaleBot\n\n" +
-      "━━━━━━━━━━━━━━━━━━\n" +
-      "<b>Выбери сумму пополнения:</b>",
+    text: caption + "\n\n<b>Выбери сумму пополнения:</b>",
     parse_mode: "HTML",
-    reply_markup: channelCatalogKeyboard()
+    reply_markup: keyboard
   });
 }
 
@@ -211,6 +249,7 @@ async function sendMenu(token, chatId, env) {
     "🔒 Пароль от аккаунта не требуется\n\n" +
     "━━━━━━━━━━━━━━━━━━\n" +
     "Выбери нужный раздел:";
+
   if (env.BRAND_IMAGE_FILE_ID) {
     return tg(token, "sendPhoto", {
       chat_id: chatId,
@@ -220,6 +259,7 @@ async function sendMenu(token, chatId, env) {
       reply_markup: MENU
     });
   }
+
   return tg(token, "sendMessage", {
     chat_id: chatId,
     text,
@@ -262,6 +302,7 @@ async function showOrders(token, env, chatId, userId) {
     .slice(0, 10);
 
   let text = "📦 <b>МОИ ЗАКАЗЫ</b>\n━━━━━━━━━━━━━━━━━━\n\n";
+
   if (!orders.length) {
     text += "У тебя пока нет оформленных заявок.";
   } else {
@@ -274,6 +315,7 @@ async function showOrders(token, env, chatId, userId) {
         `Статус: ${STATUS_NAMES[order.status] || order.status}\n\n`;
     }
   }
+
   return tg(token, "sendMessage", {
     chat_id: chatId,
     text: text + "\n💜 xMoonSale",
@@ -302,6 +344,7 @@ async function showAdminOrders(token, env, chatId) {
   }]);
 
   rows.push([{ text: "↩️ В админ-меню", callback_data: "admin_home" }]);
+
   return tg(token, "sendMessage", {
     chat_id: chatId,
     text: "📦 <b>ПОСЛЕДНИЕ ЗАКАЗЫ</b>\n━━━━━━━━━━━━━━━━━━\nВыбери заказ:",
@@ -330,12 +373,14 @@ async function showOrder(token, env, chatId, orderId) {
     : calculateBYN(order.price, orderRate);
 
   const rows = [];
+
   if (order.status === "pending") {
     rows.push([{ text: "💳 Подтвердить оплату", callback_data: `op_paid_${order.id}` }]);
     rows.push([{ text: "❌ Отменить заказ", callback_data: `op_cancel_${order.id}` }]);
   } else if (order.status === "paid") {
     rows.push([{ text: "✅ Отметить выполненным", callback_data: `op_done_${order.id}` }]);
   }
+
   rows.push([{ text: "↩️ К заказам", callback_data: "admin_orders" }]);
 
   return tg(token, "sendMessage", {
@@ -377,6 +422,7 @@ async function changeOrderStatus(token, env, orderId, status) {
   await saveJson(env, `order:${orderId}`, order);
 
   let extra = "";
+
   if (status === "paid") {
     extra = "\n\n💜 Оплата подтверждена. Заказ скоро будет обработан.";
   } else if (status === "done") {
@@ -401,6 +447,7 @@ async function showStats(token, env, chatId) {
   const users = await listJson(env, "user:");
   const orders = await listJson(env, "order:");
   const count = (status) => orders.filter((o) => o.status === status).length;
+
   const completedTotal = orders
     .filter((o) => o.status === "done")
     .reduce((sum, o) => sum + Number(o.price || 0), 0);
@@ -475,6 +522,7 @@ async function sendBroadcast(token, env, chatId) {
   }
 
   await deleteKey(env, "broadcast:draft");
+
   return tg(token, "sendMessage", {
     chat_id: chatId,
     text:
@@ -709,6 +757,7 @@ export default {
           await sendMenu(env.BOT_TOKEN, chatId, env);
         } else if (data === "steam") {
           const result = await sendSteamMenu(env.BOT_TOKEN, chatId, messageId);
+
           if (!result?.ok) {
             await tg(env.BOT_TOKEN, "sendMessage", {
               chat_id: chatId,
@@ -853,7 +902,8 @@ export default {
           return new Response("OK");
         }
 
-        const result = await publishChannelCatalog(env.BOT_TOKEN);
+        // Передаём env, чтобы функция могла использовать изображение бренда.
+        const result = await publishChannelCatalog(env.BOT_TOKEN, env);
 
         await tg(env.BOT_TOKEN, "sendMessage", {
           chat_id: chatId,
@@ -873,16 +923,19 @@ export default {
           });
           return new Response("OK");
         }
+
         await sendAdminMenu(env.BOT_TOKEN, chatId);
         return new Response("OK");
       }
 
       if (text === "/cancel") {
         await deleteKey(env, `state:${userId}`);
+
         await tg(env.BOT_TOKEN, "sendMessage", {
           chat_id: chatId,
           text: "↩️ Действие отменено."
         });
+
         await sendMenu(env.BOT_TOKEN, chatId, env);
         return new Response("OK");
       }
@@ -894,6 +947,7 @@ export default {
         const photo = message.photo?.length
           ? message.photo[message.photo.length - 1].file_id
           : null;
+
         const caption = (message.caption || text || "").trim();
 
         if (!photo && !caption) {
