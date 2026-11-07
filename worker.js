@@ -3,15 +3,15 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // Проверка наличия секретов
+    if (!env.BOT_TOKEN || !env.WEBHOOK_SECRET) {
+      return new Response("Worker secrets are missing", {
+        status: 500
+      });
+    }
+
     // Настройка Telegram Webhook
     if (request.method === "GET" && url.pathname === "/setup") {
-      return new Response(JSON.stringify({
-  botToken: Boolean(env.BOT_TOKEN),
-  webhookSecret: Boolean(env.WEBHOOK_SECRET)
-}), {
-  headers: { "Content-Type": "application/json" }
-});
-
       if (url.searchParams.get("key") !== env.WEBHOOK_SECRET) {
         return new Response("Forbidden", { status: 403 });
       }
@@ -45,9 +45,8 @@ export default {
 
     // Проверка секретного токена Telegram
     if (
-      !env.WEBHOOK_SECRET ||
       request.headers.get("X-Telegram-Bot-Api-Secret-Token") !==
-        env.WEBHOOK_SECRET
+      env.WEBHOOK_SECRET
     ) {
       return new Response("Forbidden", { status: 403 });
     }
