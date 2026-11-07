@@ -1,12 +1,16 @@
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Одноразовая настройка Telegram Webhook
+    // Настройка Telegram Webhook
     if (request.method === "GET" && url.pathname === "/setup") {
-      return new Response(
-  env.WEBHOOK_SECRET ? "SECRET EXISTS" : "SECRET MISSING"
-);
+      if (!env.WEBHOOK_SECRET || !env.BOT_TOKEN) {
+        return new Response("Worker secrets are missing", {
+          status: 500
+        });
+      }
+
       if (url.searchParams.get("key") !== env.WEBHOOK_SECRET) {
         return new Response("Forbidden", { status: 403 });
       }
@@ -15,7 +19,9 @@ export default {
         `https://api.telegram.org/bot${env.BOT_TOKEN}/setWebhook`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json"
+          },
           body: JSON.stringify({
             url: "https://xmoonsale-bot.xmoonsale.workers.dev/",
             secret_token: env.WEBHOOK_SECRET,
@@ -25,22 +31,27 @@ export default {
       );
 
       return new Response(await result.text(), {
-        headers: { "Content-Type": "application/json" }
+        headers: {
+          "Content-Type": "application/json"
+        }
       });
     }
 
+    // Проверка доступности Worker
     if (request.method !== "POST") {
       return new Response("🌌 xMoonSale is online!");
     }
 
-    // Проверяем, что запрос действительно от Telegram
+    // Проверка секретного токена Telegram
     if (
+      !env.WEBHOOK_SECRET ||
       request.headers.get("X-Telegram-Bot-Api-Secret-Token") !==
-      env.WEBHOOK_SECRET
+        env.WEBHOOK_SECRET
     ) {
       return new Response("Forbidden", { status: 403 });
     }
 
+    // Получение обновления от Telegram
     const update = await request.json();
     const message = update.message;
 
@@ -88,11 +99,14 @@ export default {
         reply = "Используйте /start для открытия меню.";
     }
 
+    // Отправка ответа пользователю
     await fetch(
       `https://api.telegram.org/bot${env.BOT_TOKEN}/sendMessage`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify({
           chat_id: chatId,
           text: reply
