@@ -25,6 +25,9 @@ const PRODUCTS = {
   2000: { price: 2599, label: "2 000 ₽", tag: "🚀 Максимум" }
 };
 
+// Telegram-канал xMoonVerse.
+const CHANNEL_USERNAME = "@xmoonverse";
+
 const MENU = KEYBOARD([
   [{ text: "🎮 Пополнить Steam", callback_data: "steam" }],
   [{ text: "📦 Мои заказы", callback_data: "orders" }],
@@ -150,6 +153,52 @@ function steamKeyboard() {
   }
   rows.push([{ text: "↩️ Назад", callback_data: "menu" }]);
   return KEYBOARD(rows);
+}
+
+// Кнопки каталога канала.
+// Каждая кнопка открывает бота с уже выбранным номиналом.
+function channelCatalogKeyboard() {
+  const amounts = Object.keys(PRODUCTS).map(Number);
+  const rows = [];
+
+  for (let i = 0; i < amounts.length; i += 2) {
+    rows.push(amounts.slice(i, i + 2).map((amount) => {
+      const product = PRODUCTS[amount];
+
+      return {
+        text: `${product.label} · ${product.price} ₽`,
+        url: `https://t.me/xMoonSaleBot?start=steam_${amount}`
+      };
+    }));
+  }
+
+  rows.push([
+    {
+      text: "💬 Поддержка",
+      url: "https://t.me/axg0d"
+    }
+  ]);
+
+  return KEYBOARD(rows);
+}
+
+// Публикация каталога Steam в канале xMoonVerse.
+async function publishChannelCatalog(token) {
+  return tg(token, "sendMessage", {
+    chat_id: CHANNEL_USERNAME,
+    text:
+      "🌌 <b>xMoonVerse</b>\n" +
+      "━━━━━━━━━━━━━━━━━━\n\n" +
+      "🎮 <b>STEAM | ПОПОЛНЕНИЕ БАЛАНСА</b>\n\n" +
+      "Выбери нужный номинал и перейди к оформлению заказа.\n\n" +
+      "💜 Прозрачные цены\n" +
+      "🔒 Пароль от аккаунта не требуется\n" +
+      "🚀 Удобное оформление через xMoonSaleBot\n\n" +
+      "━━━━━━━━━━━━━━━━━━\n" +
+      "<b>Выбери сумму пополнения:</b>",
+    parse_mode: "HTML",
+    reply_markup: channelCatalogKeyboard()
+  });
 }
 
 async function sendMenu(token, chatId, env) {
@@ -753,9 +802,66 @@ export default {
 
       await saveUser(env, message.from);
 
-      if (text === "/start" || text === "/menu") {
+      // Обработка обычного /start и deep link с выбранным номиналом.
+      const startMatch = text.match(
+        /^\/start(?:@\w+)?(?:\s+([A-Za-z0-9_-]+))?$/
+      );
+
+      if (startMatch || text === "/menu") {
         await deleteKey(env, `state:${userId}`);
+
+        const payload = startMatch?.[1] || "";
+        const steamMatch = payload.match(/^steam_(\d+)$/);
+        const amount = steamMatch ? Number(steamMatch[1]) : null;
+
+        if (amount && PRODUCTS[amount]) {
+          await saveJson(env, `state:${userId}`, {
+            type: "steam_login",
+            amount,
+            createdAt: new Date().toISOString()
+          }, 1800);
+
+          await tg(env.BOT_TOKEN, "sendMessage", {
+            chat_id: chatId,
+            text:
+              "🌌 <b>xMoonVerse | STEAM</b>\n" +
+              "━━━━━━━━━━━━━━━━━━\n\n" +
+              `💎 Пополнение: <b>${amount} ₽</b>\n` +
+              `💰 К оплате: <b>${PRODUCTS[amount].price} ₽</b>\n\n` +
+              "Отправь свой логин Steam следующим сообщением.\n\n" +
+              "⚠️ Нужен именно логин аккаунта. Пароль не отправляй!",
+            parse_mode: "HTML",
+            reply_markup: KEYBOARD([
+              [{ text: "❌ Отмена", callback_data: "checkout_cancel" }]
+            ])
+          });
+
+          return new Response("OK");
+        }
+
         await sendMenu(env.BOT_TOKEN, chatId, env);
+        return new Response("OK");
+      }
+
+      // Публикация каталога в канале доступна только администратору.
+      if (text === "/postcatalog") {
+        if (!isAdmin(env, userId)) {
+          await tg(env.BOT_TOKEN, "sendMessage", {
+            chat_id: chatId,
+            text: "⛔ Доступ запрещён."
+          });
+          return new Response("OK");
+        }
+
+        const result = await publishChannelCatalog(env.BOT_TOKEN);
+
+        await tg(env.BOT_TOKEN, "sendMessage", {
+          chat_id: chatId,
+          text: result?.ok
+            ? "✅ Каталог Steam опубликован в канале @xmoonverse."
+            : "⚠️ Не удалось опубликовать каталог. Проверь права бота в канале."
+        });
+
         return new Response("OK");
       }
 
