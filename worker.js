@@ -436,6 +436,7 @@ async function sendBroadcast(token, env, chatId) {
     reply_markup: ADMIN_MENU
   });
 }
+
 function paymentMessage(env, order) {
   // Убираем строки с упоминанием BYN из инструкции покупателю.
   const details = String(env.PAYMENT_DETAILS || "")
@@ -461,7 +462,6 @@ function paymentMessage(env, order) {
     "После оплаты дождись подтверждения администратора. Пароль Steam не отправляй."
   );
 }
-
 async function createOrder(token, env, chatId, userId, state) {
   const product = PRODUCTS[state.amount];
 
