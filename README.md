@@ -1,2 +1,2 @@
-# xmoonsale-bot
-Telegram shop bot for xMoonSale
+# xmoonverse-bot
+Telegram shop bot for xMoonVerse
